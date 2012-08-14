@@ -205,6 +205,7 @@ def pagination_for(context, current_page):
     return {"current_page": current_page, "querystring": querystring}
 
 
+from cStringIO import StringIO
 @register.simple_tag
 def thumbnail(image_url, width, height, quality=95):
     """
@@ -216,6 +217,7 @@ def thumbnail(image_url, width, height, quality=95):
     if not image_url:
         return ""
 
+    image_url2 = '%s%s' % (settings.MEDIA_URL, image_url)
     image_url = unquote(unicode(image_url))
     if image_url.startswith(settings.MEDIA_URL):
         image_url = image_url.replace(settings.MEDIA_URL, "", 1)
@@ -228,8 +230,7 @@ def thumbnail(image_url, width, height, quality=95):
     if not os.path.exists(thumb_dir):
         os.makedirs(thumb_dir)
     thumb_path = os.path.join(thumb_dir, thumb_name)
-    thumb_url = "%s/%s" % (settings.THUMBNAILS_DIR_NAME,
-                           quote(thumb_name.encode("utf-8")))
+    thumb_url = "%s/%s" % (settings.THUMBNAILS_DIR_NAME, quote(thumb_name))
     image_url_path = os.path.dirname(image_url)
     if image_url_path:
         thumb_url = "%s/%s" % (image_url_path, thumb_url)
@@ -249,10 +250,13 @@ def thumbnail(image_url, width, height, quality=95):
         # Requested image does not exist, just return its URL.
         return image_url
 
-    image = Image.open(default_storage.open(image_url))
-    image_info = image.info
+    # image = Image.open(default_storage.open(image_url))
+    img_file = urlopen(image_url2)
+    im = StringIO(img_file.read())
+    image = Image.open(im)
     width = int(width)
     height = int(height)
+    image_info = image.info
 
     # If already right size, don't do anything.
     if width == image.size[0] and height == image.size[1]:
