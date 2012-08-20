@@ -20,7 +20,7 @@ from django.utils.html import strip_tags
 from django.utils.simplejson import loads
 from django.utils.text import capfirst
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFile, ImageOps
 
 from mezzanine.conf import settings
 from mezzanine.core.fields import RichTextField
@@ -205,7 +205,6 @@ def pagination_for(context, current_page):
     return {"current_page": current_page, "querystring": querystring}
 
 
-from cStringIO import StringIO
 @register.simple_tag
 def thumbnail(image_url, width, height, quality=95):
     """
@@ -217,7 +216,6 @@ def thumbnail(image_url, width, height, quality=95):
     if not image_url:
         return ""
 
-    image_url2 = '%s%s' % (settings.MEDIA_URL, image_url)
     image_url = unquote(unicode(image_url))
     if image_url.startswith(settings.MEDIA_URL):
         image_url = image_url.replace(settings.MEDIA_URL, "", 1)
@@ -230,7 +228,8 @@ def thumbnail(image_url, width, height, quality=95):
     if not os.path.exists(thumb_dir):
         os.makedirs(thumb_dir)
     thumb_path = os.path.join(thumb_dir, thumb_name)
-    thumb_url = "%s/%s" % (settings.THUMBNAILS_DIR_NAME, quote(thumb_name))
+    thumb_url = "%s/%s" % (settings.THUMBNAILS_DIR_NAME,
+                           quote(thumb_name.encode("utf-8")))
     image_url_path = os.path.dirname(image_url)
     if image_url_path:
         thumb_url = "%s/%s" % (image_url_path, thumb_url)
@@ -250,13 +249,10 @@ def thumbnail(image_url, width, height, quality=95):
         # Requested image does not exist, just return its URL.
         return image_url
 
-    # image = Image.open(default_storage.open(image_url))
-    img_file = urlopen(image_url2)
-    im = StringIO(img_file.read())
-    image = Image.open(im)
+    image = Image.open(default_storage.open(image_url))
+    image_info = image.info
     width = int(width)
     height = int(height)
-    image_info = image.info
 
     # If already right size, don't do anything.
     if width == image.size[0] and height == image.size[1]:
@@ -268,6 +264,8 @@ def thumbnail(image_url, width, height, quality=95):
         height = image.size[1] * width / image.size[0]
     if image.mode not in ("L", "RGBA"):
         image = image.convert("RGBA")
+    # Required for progressive jpgs.
+    ImageFile.MAXBLOCK = image.size[0] * image.size[1]
     try:
         image = ImageOps.fit(image, (width, height), Image.ANTIALIAS)
         image = image.save(thumb_path, filetype, quality=quality, **image_info)
@@ -276,7 +274,14 @@ def thumbnail(image_url, width, height, quality=95):
         if "://" in settings.MEDIA_URL:
             with open(thumb_path, "r") as f:
                 default_storage.save(thumb_url, File(f))
-    except:
+    except Exception:
+        # If an error occurred, a corrupted image may have been saved,
+        # so remove it, otherwise the check for it existing will just
+        # return the corrupted image next time it's requested.
+        try:
+            os.remove(thumb_path)
+        except Exception:
+            pass
         return image_url
     return thumb_url
 
@@ -316,7 +321,7 @@ def editable(parsed, context, token):
     """
     def parse_field(field):
         field = field.split(".")
-        obj = context[field.pop(0)]
+        obj = context.get(field.pop(0), None)
         attr = field.pop()
         while field:
             obj = getattr(obj, field.pop(0))

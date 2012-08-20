@@ -93,7 +93,7 @@ def blog_post_list(request, tag=None, year=None, month=None, username=None,
     return render(request, templates, context)
 
 
-def blog_post_detail(request, slug, year=None, month=None,
+def blog_post_detail(request, slug, year=None, month=None, day=None,
                      template="blog/blog_post_detail.html"):
     """. Custom templates are checked for using the name
     ``blog/blog_post_detail_XXX.html`` where ``XXX`` is the blog
@@ -106,7 +106,7 @@ def blog_post_detail(request, slug, year=None, month=None,
     return render(request, templates, context)
 
 
-def blog_post_feed(request, format):
+def blog_post_feed(request, format, **kwargs):
     """
     Blog posts feeds - handle difference between Django 1.3 and 1.4
     """
@@ -120,6 +120,10 @@ def blog_post_feed(request, format):
         from django.contrib.syndication.views import feed
     except ImportError:
         # Django >= 1.4
-        return blog_feed_dict[format]()(request)
+        return blog_feed_dict[format](**kwargs)(request)
     else:
+        if len(kwargs) == 1:
+            # /author/foo/ or /tag/bar/ or /category/baz/
+            # gets extracted in get_feed method of feed class.
+            format += "/%s/%s" % kwargs.items()[0]
         return feed(request, format, feed_dict=blog_feed_dict)
